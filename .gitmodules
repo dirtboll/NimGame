@@ -1,0 +1,6 @@
+[submodule "nimraylib_now"]
+	path = nimraylib_now
+	url = https://github.com/greenfork/nimraylib_now
+[submodule "nim-glm"]
+	path = nim-glm
+	url = https://github.com/stavenko/nim-glm
