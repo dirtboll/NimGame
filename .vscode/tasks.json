@@ -1,0 +1,44 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "[Test] Build & Run",
+            "type": "shell",
+            "command": "nim",
+            "args": ["c", "-r", "main.nim"],
+            "options": {
+                "cwd": "${workspaceRoot}"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "[Test] Build",
+            "type": "shell",
+            "command": "nim",
+            "args": ["c", "-r", "main.nim"],
+            "options": {
+                "cwd": "${workspaceRoot}"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "[Release] Build & Run",
+            "type": "shell",
+            "command": "nim",
+            "args": ["release.nims"],
+            "options": {
+                "cwd": "${workspaceRoot}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

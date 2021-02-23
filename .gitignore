@@ -1,0 +1,12 @@
+.bin
+bin/
+.tmp
+tmp/
+
+*.a
+
+.nim-glm
+nim-glm/
+
+.nimraylib_now
+nimraylib_now/
