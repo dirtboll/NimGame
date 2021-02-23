@@ -5,13 +5,19 @@ import nimraylib_now/raylib,
        oids
 
 # --------------------------------------------------------------------------------------
-# Game Settings - from raylib
+# DEFs
 # --------------------------------------------------------------------------------------
 
-# from raylib
-# Keyboard keys (US keyboard layout)
-# NOTE: Use GetKeyPressed() to allow redefining
-# required keys for alternative layouts
+# From raylib
+const MOUSE_SENSITIVITY                                 = 0.003f
+const CAMERA_FIRST_PERSON_STEP_TRIGONOMETRIC_DIVIDER    = 8.0f
+const CAMERA_FIRST_PERSON_WAVING_DIVIDER                = 200.0f
+const CAMERA_FIRST_PERSON_MIN_CLAMP                     = 89.0f
+const CAMERA_FIRST_PERSON_MAX_CLAMP                     = -89.0f
+const CAMERA_FREE_PANNING_DIVIDER                       = 5.1f
+const DEG2RAD                                           = (PI/180.0f)
+const PLAYER_MOVEMENT_SENSITIVITY                       = 20.0f
+
 type KeyboardKey = enum 
     KEY_SPACE           = 32, 
     KEY_APOSTROPHE      = 39,
@@ -119,16 +125,6 @@ type KeyboardKey = enum
     KEY_RIGHT_SUPER     = 347,
     KEY_KB_MENU         = 348,
 
-const MOUSE_SENSITIVITY                                 = 0.003f
-const CAMERA_FIRST_PERSON_STEP_TRIGONOMETRIC_DIVIDER    = 8.0f
-const CAMERA_FIRST_PERSON_WAVING_DIVIDER                = 200.0f
-const CAMERA_FIRST_PERSON_MIN_CLAMP                     = 89.0f
-const CAMERA_FIRST_PERSON_MAX_CLAMP                     = -89.0f
-const CAMERA_FREE_PANNING_DIVIDER                       = 5.1f
-const DEG2RAD                                           = (PI/180.0f)
-const PLAYER_MOVEMENT_SENSITIVITY                       = 20.0f
-
-
 # --------------------------------------------------------------------------------------
 # World
 # --------------------------------------------------------------------------------------
@@ -170,12 +166,6 @@ type
 
     Camera* = Camera3D
 
-proc toRayCamera3D(camera: Camera3D): raylib.Camera3D = 
-    result = cast[raylib.Camera3D](camera)
-    result.up = camera.up
-    result.fovy = camera.fovy
-    result.`type` = camera.`type`
-
 type 
     # Entity* = ref object of RootObj
     #     world*: ref World
@@ -184,7 +174,7 @@ type
     #     oid*: Oid
 
     PlayerEntity* = object
-        world*: ref World
+        world*: ptr World
         position*: Vector3
         velocity*: Vector3
         oid*: Oid
@@ -197,15 +187,12 @@ type
 
 proc createPlayer* (): PlayerEntity =
     result.camera = Camera()
-    #     position: Vector3(x: 4.0f, y: 2.0f, z: 4.0f),
-    #     target: Vector3(x: 0.0f, y: 1.8f, z: 0.0f),
-    #     up: Vector3(x: 0.0f, y: 1.0f, z: 0.0f),
-    #     fovy: 60.0f,
-    #     `type`: 0
-    # ) 
+
     var pos = Vector3(x: 4.0f, y: 2.0f, z: 4.0f)
     result.camera.position = pos
-    result.camera.target = Vector3(x: 0.0f, y: 1.8f, z: 0.0f)
+    result.position = pos
+
+    result.camera.target = Vector3(x: 0.0f, y: 0.0f, z: 0.0f)
     result.camera.up = Vector3(x: 0.0f, y: 1.0f, z: 0.0f)
     result.camera.fovy = (60.0).cfloat
     result.camera.`type` = (0).cint
@@ -214,14 +201,12 @@ proc createPlayer* (): PlayerEntity =
     let dy = result.camera.target.y - result.camera.position.y
     let dz = result.camera.target.z - result.camera.position.z
     result.camera.targetDistance = sqrt(dx*dx + dy*dy + dz*dz)
-
-    result.position = pos
+    
     result.cameraMode = CameraMode.FIRST_PERSON
-    result.oid = Oid()
+    result.oid = genOid()
+    result.previousMousePos = getMousePosition()
 
 proc updatePlayer* (player: ptr PlayerEntity) = 
-    var swingCounter = 0
-
     var direction = [ isKeyDown(moveControl[MOVE_FRONT.cint].cint),
                       isKeyDown(moveControl[MOVE_BACK.cint].cint),
                       isKeyDown(moveControl[MOVE_RIGHT.cint].cint),
@@ -234,11 +219,7 @@ proc updatePlayer* (player: ptr PlayerEntity) =
 
     case player.cameraMode:
         of CameraMode.FIRST_PERSON:
-            # player.position.x += ( sin(player.rotation.x) * cast[float]direction[MOVE_BACK.cint]  -
-            #                        sin(player.rotation.x) * direction[MOVE_FRONT.cint] -
-            #                        cos(player.rotation.x) * direction[MOVE_LEFT.cint]  +
-            #                        cos(player.rotation.x) * direction[MOVE_RIGHT.cint]) / PLAYER_MOVEMENT_SENSITIVITY;
-            # Camera rotation calcuation
+            # Player Head rotation calcuation
             player.headRotation.x += mouseDelta.x * -MOUSE_SENSITIVITY
             player.headRotation.y += mouseDelta.y * -MOUSE_SENSITIVITY
 
@@ -248,8 +229,7 @@ proc updatePlayer* (player: ptr PlayerEntity) =
             elif player.headRotation.y < CAMERA_FIRST_PERSON_MAX_CLAMP*DEG2RAD: 
                 player.headRotation.y = CAMERA_FIRST_PERSON_MAX_CLAMP*DEG2RAD;
 
-            player.camera.position = player.position
-
+            # Calculate Player position
             player.position.x += ( sin(player.headRotation.x) * direction[MOVE_BACK.cint].float32 - 
                                    sin(player.headRotation.x) * direction[MOVE_FRONT.cint].float32 -
                                    cos(player.headRotation.x) * direction[MOVE_LEFT.cint].float32  +
@@ -264,6 +244,8 @@ proc updatePlayer* (player: ptr PlayerEntity) =
                                    sin(player.headRotation.x) * direction[MOVE_LEFT.cint].float32 -
                                    sin(player.headRotation.x) * direction[MOVE_RIGHT.cint].float32) / PLAYER_MOVEMENT_SENSITIVITY;
 
+            player.camera.position = player.position
+
             # Recalculate camera target considering translation and rotation
             var translation = translate(0, 0, (player.camera.targetDistance/CAMERA_FREE_PANNING_DIVIDER));
             var rotation = rotateXYZ(Vector3(x: PI*2 - player.headRotation.y, y: PI*2 - player.headRotation.x, z: 0.0f));
@@ -273,13 +255,6 @@ proc updatePlayer* (player: ptr PlayerEntity) =
             player.camera.target.y = player.camera.position.y - transform.m13
             player.camera.target.z = player.camera.position.z - transform.m14
 
-            for i in 0..5: 
-                if direction[i]: 
-                    swingCounter += 1
-
-            player.camera.up.x = sin(swingCounter.float32 / (CAMERA_FIRST_PERSON_STEP_TRIGONOMETRIC_DIVIDER*2)) / CAMERA_FIRST_PERSON_WAVING_DIVIDER;
-            player.camera.up.z = -sin(swingCounter.float32 / (CAMERA_FIRST_PERSON_STEP_TRIGONOMETRIC_DIVIDER*2)) / CAMERA_FIRST_PERSON_WAVING_DIVIDER;
-            
         of CameraMode.THIRD_PERSON:
             discard
         of CameraMode.ORBITAL:
@@ -315,19 +290,29 @@ proc updatePlayer* (player: ptr PlayerEntity) =
 #     result.collided = maxDist < 0
 
 # --------------------------------------------------------------------------------------
+# Utils
+# --------------------------------------------------------------------------------------
+
+converter toCamera3D(camera: var Camera3D): raylib.Camera3D = 
+    result.position = camera.position
+    result.target = camera.target
+    result.up = camera.up
+    result.fovy = camera.fovy
+    result.`type` = camera.`type`
+
+# --------------------------------------------------------------------------------------
 # Main Game
 # --------------------------------------------------------------------------------------
 
 const MaxColumns = 20
 
 # Initialization
-const screenWidth = 800
-const screenHeight = 450
+const screenWidth = 1366
+const screenHeight = 760
 
 initWindow screenWidth, screenHeight, "raylib [core] example - 3d camera first person"
 
 var playerEntity = createPlayer()
-setCameraMode(cast[raylib.Camera](playerEntity.camera), 0)
 
 #  Generates some random columns
 var 
@@ -340,14 +325,13 @@ for i in 0..<MaxColumns:
     positions[i] = Vector3(x: getRandomValue(-15, 15).float, y: heights[i]/2, z: getRandomValue(-15, 15).float)
     colors[i] = Color(r: getRandomValue(20, 255).uint8, g: getRandomValue(10, 55).uint8, b: 30, a: 255)
 
-setTargetFPS 144                         
+#setTargetFPS 144                         
 # --------------------------------------------------------------------------------------
 
 var lastFrameTime:float = 0
 var lastTime:float
 
 disableCursor()
-
 
 #  Main game loop
 while not windowShouldClose():              #  Detect window close button or ESC key
@@ -357,7 +341,7 @@ while not windowShouldClose():              #  Detect window close button or ESC
 
     clearBackground RayWhite
 
-    beginMode3D playerEntity.camera.toRayCamera3D
+    beginMode3D playerEntity.camera
 
     drawPlane Vector3(x: 0.0f, y: 0.0f, z: 0.0f), Vector2(x: 32.0f, y: 32.0f), LIGHTGRAY #  Draw ground
     drawCube Vector3(x: -16.0f, y: 2.5f, z: 0.0f), 1.0f, 5.0f, 32.0f, BLUE               #  Draw a blue wall
@@ -369,7 +353,7 @@ while not windowShouldClose():              #  Detect window close button or ESC
         drawCube positions[i], 2.0, heights[i], 2.0, colors[i]
         drawCubeWires positions[i], 2.0, heights[i], 2.0, Maroon
 
-    #drawCube playerEntity.camera.target, 0.1, 0.1, 0.1, Black
+    drawCube playerEntity.camera.target, 0.1, 0.1, 0.1, Black
 
     endMode3D()
 
@@ -386,7 +370,9 @@ while not windowShouldClose():              #  Detect window close button or ESC
       lastTime = 0
     
     drawText fmt"- FPS: {(int) 1/lastFrameTime}", 40, 80, 10, Darkgray
-      
+    drawText "- Mousepos: " & getMousePosition().repr, 40, 120, 10, Black
+    drawText fmt"- x: {getMouseX().repr} y: {getMouseY().repr}", 40, 140, 10, Black
+
     endDrawing()
     # ----------------------------------------------------------------------------------
 
