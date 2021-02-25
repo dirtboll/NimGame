@@ -4,133 +4,8 @@ import nimraylib_now/raylib,
        strformat,
        oids
 
-# --------------------------------------------------------------------------------------
-# DEFs
-# --------------------------------------------------------------------------------------
-
-# From raylib
-const MOUSE_SENSITIVITY                                 = 0.003f
-const CAMERA_FIRST_PERSON_STEP_TRIGONOMETRIC_DIVIDER    = 8.0f
-const CAMERA_FIRST_PERSON_WAVING_DIVIDER                = 200.0f
-const CAMERA_FIRST_PERSON_MIN_CLAMP                     = 89.0f
-const CAMERA_FIRST_PERSON_MAX_CLAMP                     = -89.0f
-const CAMERA_FREE_PANNING_DIVIDER                       = 5.1f
-const DEG2RAD                                           = (PI/180.0f)
-const PLAYER_MOVEMENT_SENSITIVITY                       = 20.0f
-
-type KeyboardKey = enum 
-    KEY_SPACE           = 32, 
-    KEY_APOSTROPHE      = 39,
-    KEY_COMMA           = 44,
-    KEY_MINUS           = 45,
-    KEY_PERIOD          = 46,
-    KEY_SLASH           = 47,
-    KEY_ZERO            = 48,
-    KEY_ONE             = 49,
-    KEY_TWO             = 50,
-    KEY_THREE           = 51,
-    KEY_FOUR            = 52,
-    KEY_FIVE            = 53,
-    KEY_SIX             = 54,
-    KEY_SEVEN           = 55,
-    KEY_EIGHT           = 56,
-    KEY_NINE            = 57,
-    KEY_SEMICOLON       = 59,
-    KEY_EQUAL           = 61,
-    KEY_A               = 65,
-    KEY_B               = 66,
-    KEY_C               = 67,
-    KEY_D               = 68,
-    KEY_E               = 69,
-    KEY_F               = 70,
-    KEY_G               = 71,
-    KEY_H               = 72,
-    KEY_I               = 73,
-    KEY_J               = 74,
-    KEY_K               = 75,
-    KEY_L               = 76,
-    KEY_M               = 77,
-    KEY_N               = 78,
-    KEY_O               = 79,
-    KEY_P               = 80,
-    KEY_Q               = 81,
-    KEY_R               = 82,
-    KEY_S               = 83,
-    KEY_T               = 84,
-    KEY_U               = 85,
-    KEY_V               = 86,
-    KEY_W               = 87,
-    KEY_X               = 88,
-    KEY_Y               = 89,
-    KEY_Z               = 90,
-    KEY_LEFT_BRACKET    = 91,
-    KEY_BACKSLASH       = 92,
-    KEY_RIGHT_BRACKET   = 93,
-    KEY_GRAVE           = 96,
-    KEY_ESCAPE          = 256,
-    KEY_ENTER           = 257,
-    KEY_TAB             = 258,
-    KEY_BACKSPACE       = 259,
-    KEY_INSERT          = 260,
-    KEY_DELETE          = 261,
-    KEY_RIGHT           = 262,
-    KEY_LEFT            = 263,
-    KEY_DOWN            = 264,
-    KEY_UP              = 265,
-    KEY_PAGE_UP         = 266,
-    KEY_PAGE_DOWN       = 267,
-    KEY_HOME            = 268,
-    KEY_END             = 269,
-    KEY_CAPS_LOCK       = 280,
-    KEY_SCROLL_LOCK     = 281,
-    KEY_NUM_LOCK        = 282,
-    KEY_PRINT_SCREEN    = 283,
-    KEY_PAUSE           = 284,
-    KEY_F1              = 290,
-    KEY_F2              = 291,
-    KEY_F3              = 292,
-    KEY_F4              = 293,
-    KEY_F5              = 294,
-    KEY_F6              = 295,
-    KEY_F7              = 296,
-    KEY_F8              = 297,
-    KEY_F9              = 298,
-    KEY_F10             = 299,
-    KEY_F11             = 300,
-    KEY_F12             = 301,
-    KEY_KP_0            = 320,
-    KEY_KP_1            = 321,
-    KEY_KP_2            = 322,
-    KEY_KP_3            = 323,
-    KEY_KP_4            = 324,
-    KEY_KP_5            = 325,
-    KEY_KP_6            = 326,
-    KEY_KP_7            = 327,
-    KEY_KP_8            = 328,
-    KEY_KP_9            = 329,
-    KEY_KP_DECIMAL      = 330,
-    KEY_KP_DIVIDE       = 331,
-    KEY_KP_MULTIPLY     = 332,
-    KEY_KP_SUBTRACT     = 333,
-    KEY_KP_ADD          = 334,
-    KEY_KP_ENTER        = 335,
-    KEY_KP_EQUAL        = 336
-    KEY_LEFT_SHIFT      = 340,
-    KEY_LEFT_CONTROL    = 341,
-    KEY_LEFT_ALT        = 342,
-    KEY_LEFT_SUPER      = 343,
-    KEY_RIGHT_SHIFT     = 344,
-    KEY_RIGHT_CONTROL   = 345,
-    KEY_RIGHT_ALT       = 346,
-    KEY_RIGHT_SUPER     = 347,
-    KEY_KB_MENU         = 348,
-
-# --------------------------------------------------------------------------------------
-# World
-# --------------------------------------------------------------------------------------
-
-type World* = object
-    name:string
+import params,
+       world
 
 # --------------------------------------------------------------------------------------
 # Entity
@@ -144,12 +19,12 @@ type CameraMove = enum
     MOVE_UP,
     MOVE_DOWN
 
-const moveControl = [ KeyboardKey.KEY_W, 
-                      KeyboardKey.KEY_S, 
-                      KeyboardKey.KEY_D, 
-                      KeyboardKey.KEY_A, 
-                      KeyboardKey.KEY_SPACE, 
-                      KeyboardKey.KEY_LEFT_SHIFT ]
+const moveControl = [ params.KeyboardKey.KEY_W, 
+                      params.KeyboardKey.KEY_S, 
+                      params.KeyboardKey.KEY_D, 
+                      params.KeyboardKey.KEY_A, 
+                      params.KeyboardKey.KEY_SPACE, 
+                      params.KeyboardKey.KEY_LEFT_SHIFT ]
 
 type CameraMode = enum
     CUSTOM = 0, FREE, ORBITAL, FIRST_PERSON, THIRD_PERSON
@@ -185,14 +60,14 @@ type
         rotation*: Vector2
         previousMousePos*: Vector2
 
-proc createPlayer* (): PlayerEntity =
+proc createPlayer* (x: float32, y: float32, z: float32, targetX: float32, targetY: float32, targetZ: float32): PlayerEntity =
     result.camera = Camera()
 
-    var pos = Vector3(x: 4.0f, y: 2.0f, z: 4.0f)
+    var pos = Vector3(x: x, y: y, z: z)
     result.camera.position = pos
     result.position = pos
 
-    result.camera.target = Vector3(x: 0.0f, y: 0.0f, z: 0.0f)
+    result.camera.target = Vector3(x: targetX, y: targetY, z: targetZ)
     result.camera.up = Vector3(x: 0.0f, y: 1.0f, z: 0.0f)
     result.camera.fovy = (60.0).cfloat
     result.camera.`type` = (0).cint
@@ -205,6 +80,9 @@ proc createPlayer* (): PlayerEntity =
     result.cameraMode = CameraMode.FIRST_PERSON
     result.oid = genOid()
     result.previousMousePos = getMousePosition()
+
+proc createPlayer* (): PlayerEntity =
+    return createPlayer(0.0,0.0,0.0,0.0,0.0,0.0)
 
 proc updatePlayer* (player: ptr PlayerEntity) = 
     var direction = [ isKeyDown(moveControl[MOVE_FRONT.cint].cint),
@@ -312,20 +190,21 @@ const screenHeight = 760
 
 initWindow screenWidth, screenHeight, "raylib [core] example - 3d camera first person"
 
-var playerEntity = createPlayer()
-
+var playerEntity = createPlayer(30.0, 32.0, -14.0, -32.0, 2.0, -32.0)
+var chunk = Chunk()
+generateChunk(chunk)
 #  Generates some random columns
-var 
-    heights: array[0..MAX_COLUMNS, float]
-    positions: array[0..MAX_COLUMNS, Vector3]
-    colors: array[0..MAX_COLUMNS, Color]
+# var 
+#     heights: array[0..MAX_COLUMNS, float]
+#     positions: array[0..MAX_COLUMNS, Vector3]
+#     colors: array[0..MAX_COLUMNS, Color]
 
-for i in 0..<MaxColumns:
-    heights[i] = getRandomValue(1, 12).float
-    positions[i] = Vector3(x: getRandomValue(-15, 15).float, y: heights[i]/2, z: getRandomValue(-15, 15).float)
-    colors[i] = Color(r: getRandomValue(20, 255).uint8, g: getRandomValue(10, 55).uint8, b: 30, a: 255)
+# for i in 0..<MaxColumns:
+#     heights[i] = getRandomValue(1, 12).float
+#     positions[i] = Vector3(x: getRandomValue(-15, 15).float, y: heights[i]/2, z: getRandomValue(-15, 15).float)
+#     colors[i] = Color(r: getRandomValue(20, 255).uint8, g: getRandomValue(10, 55).uint8, b: 30, a: 255)
 
-#setTargetFPS 144                         
+setTargetFPS 60                         
 # --------------------------------------------------------------------------------------
 
 var lastFrameTime:float = 0
@@ -337,32 +216,69 @@ disableCursor()
 while not windowShouldClose():              #  Detect window close button or ESC key
     playerEntity.addr.updatePlayer()
 
+    var chunkChanged = false
+    if isKeyDown(params.KeyboardKey.KEY_LEFT.cint):
+        world.offsetX -= 1
+        chunkChanged = true
+    if isKeyDown(params.KeyboardKey.KEY_RIGHT.cint):
+        world.offsetX += 1
+        chunkChanged = true
+    if isKeyDown(params.KeyboardKey.KEY_UP.cint):
+        world.offsetZ -= 1
+        chunkChanged = true
+    if isKeyDown(params.KeyboardKey.KEY_DOWN.cint):
+        world.offsetZ += 1
+        chunkChanged = true
+    if isKeyPressed(params.KeyboardKey.KEY_J.cint):
+        world.zoom -= 1
+        chunkChanged = true
+    if isKeyPressed(params.KeyboardKey.KEY_K.cint):
+        world.zoom += 1
+        chunkChanged = true
+    if isKeyPressed(params.KeyboardKey.KEY_N.cint):
+        world.heightMult -= 1
+        chunkChanged = true
+    if isKeyPressed(params.KeyboardKey.KEY_M.cint):
+        world.heightMult += 1
+        chunkChanged = true
+
+    if chunkChanged:
+        generateChunk(chunk)
+
     beginDrawing()
 
     clearBackground RayWhite
 
     beginMode3D playerEntity.camera
 
-    drawPlane Vector3(x: 0.0f, y: 0.0f, z: 0.0f), Vector2(x: 32.0f, y: 32.0f), LIGHTGRAY #  Draw ground
-    drawCube Vector3(x: -16.0f, y: 2.5f, z: 0.0f), 1.0f, 5.0f, 32.0f, BLUE               #  Draw a blue wall
-    drawCube Vector3(x: 16.0f, y: 2.5f, z: 0.0f), 1.0f, 5.0f, 32.0f, LIME                #  Draw a green wall
-    drawCube Vector3(x: 0.0f, y: 2.5f, z: 16.0f), 32.0f, 5.0f, 1.0f, GOLD                #  Draw a yellow wall
+    # drawPlane Vector3(x: 0.0f, y: 0.0f, z: 0.0f), Vector2(x: 32.0f, y: 32.0f), LIGHTGRAY #  Draw ground
+    # drawCube Vector3(x: -16.0f, y: 2.5f, z: 0.0f), 1.0f, 5.0f, 32.0f, BLUE               #  Draw a blue wall
+    # drawCube Vector3(x: 16.0f, y: 2.5f, z: 0.0f), 1.0f, 5.0f, 32.0f, LIME                #  Draw a green wall
+    # drawCube Vector3(x: 0.0f, y: 2.5f, z: 16.0f), 32.0f, 5.0f, 1.0f, GOLD                #  Draw a yellow wall
 
-    #  Draw some cubes around
-    for i in 0..<MaxColumns:
-        drawCube positions[i], 2.0, heights[i], 2.0, colors[i]
-        drawCubeWires positions[i], 2.0, heights[i], 2.0, Maroon
+    # #  Draw some cubes around
+    # for i in 0..<MaxColumns:
+    #     drawCube positions[i], 2.0, heights[i], 2.0, colors[i]
+    #     drawCubeWires positions[i], 2.0, heights[i], 2.0, Maroon
+
+    for z in 0..<CHUNK_DIMENSION[2]:
+        for x in 0..<CHUNK_DIMENSION[0]:
+            let height = chunk.heightMap[x][z]
+            drawCube Vector3(x: x.cfloat, y: height/2, z: z.cfloat), 1.0, height, 1.0, Gray
+            drawCubeWires Vector3(x: x.cfloat, y: height/2, z: z.cfloat), 1.0, height, 1.0, Black
 
     drawCube playerEntity.camera.target, 0.1, 0.1, 0.1, Black
 
     endMode3D()
 
-    drawRectangle 10, 10, 290, 90, fade(Skyblue, 0.5)
-    drawRectangleLines 10, 10, 290, 90, Blue
+    drawRectangle 10, 10, 380, 90, fade(Skyblue, 0.5)
+    drawRectangleLines 10, 10, 380, 90, Blue
 
     drawText "First person camera default controls:", 20, 20, 10, Black
-    drawText "- Move with keys: W, A, S, D, Space, LShift", 40, 40, 10, Darkgray
+    drawText "- Move with keys: W, A, S, D, Space, LShift, J, K, N, M, Arrows", 40, 40, 10, Darkgray
     drawText "- Mouse move to look around", 40, 60, 10, Darkgray
+    drawText fmt"- Pos {playerEntity.position.repr}", 40, 110, 10, Darkgray
+    drawText fmt"- Target pos: {playerEntity.camera.target.repr}", 40, 130, 10, Darkgray
 
     lastTime += getFrameTime()
     if lastTime >= 0.1: 
@@ -370,8 +286,6 @@ while not windowShouldClose():              #  Detect window close button or ESC
       lastTime = 0
     
     drawText fmt"- FPS: {(int) 1/lastFrameTime}", 40, 80, 10, Darkgray
-    drawText "- Mousepos: " & getMousePosition().repr, 40, 120, 10, Black
-    drawText fmt"- x: {getMouseX().repr} y: {getMouseY().repr}", 40, 140, 10, Black
 
     endDrawing()
     # ----------------------------------------------------------------------------------
