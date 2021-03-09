@@ -1,30 +1,32 @@
 #TO-DO: multithread compatible
 import 
-    sets,
-    tables,
+    glm/noise,
+    nimraylib_now/raylib,
     heapqueue,
-    oids,
-    glm/noise
+    sets,
+    heapqueue,
+    tables,
+    oids
 
 const 
     CHUNK_DIMENSION* = (x: 16, y: 256, z: 16)
-    CHUNK_SIZE = CHUNK_DIMENSION.x * CHUNK_DIMENSION.y * CHUNK_DIMENSION.z
-    HEIGHT_MAP_SIZE = CHUNK_DIMENSION.x * CHUNK_DIMENSION.z
+    CHUNK_SIZE* = CHUNK_DIMENSION.x * CHUNK_DIMENSION.y * CHUNK_DIMENSION.z
+    HEIGHT_MAP_SIZE* = CHUNK_DIMENSION.x * CHUNK_DIMENSION.z
     #CHUNK_ARRAY_SIZE = 16
-    CHUNK_LOAD_DISTANCE = (x: 8, y: 1, z: 8)
+    CHUNK_LOAD_DISTANCE* = (x: 8, y: 1, z: 8)
 
 type 
     BlockID* = enum
-        VOID = -1,
-        AIR = 0,
-        STONE,
-        DIRT,
-        WOOD
+        VOID = (-1, "t"),
+        AIR = (0, "t"),
+        STONE = (1, "s"),
+        DIRT = (2, "s"),
+        WOOD = (3, "s")
 
     Chunk* = ref object of RootObj
         pos*: tuple[x: int, y: int, z: int]
         blockArr*: array[CHUNK_SIZE, BlockID]
-        heightMap*: array[HEIGHT_MAP_SIZE, float32]
+        heightMap*: array[HEIGHT_MAP_SIZE, float]
 
     World* = ref object of RootObj
         name*: string
@@ -42,6 +44,14 @@ var
 
 # ================================| Helper Functions |========================================
 
+proc concat[I1, I2: static[int]; T](a: var array[I1, T], b: array[I2, T]): array[I1 + I2, T] =
+    result[0..a.high] = a
+    result[a.len..result.high] = b
+
+proc mask[I1, I2: static[int]; T](a: var array[I1, T], b: array[I2, T], i: int) =
+    for idx in i..a.high:
+        a[i] = b[idx-i]
+
 # TO-DO: SIMD & per-world dependant
 proc `<`(a, b: var tuple[x: int, y: int, z: int]): bool =
     var 
@@ -53,11 +63,11 @@ proc `<`(a, b: var tuple[x: int, y: int, z: int]): bool =
         bZ = b.z - currentLoaderPos.z
     return (aX*aX + aY*aY + aZ*aZ) < (bX*bX + bY*bY + bZ*bZ)
 
-func map* ( num: float32, 
-          fromMin: float32, 
-          fromMax: float32, 
-          toMin: float32, 
-          toMax: float32): float32 =
+func map* ( num: float, 
+          fromMin: float, 
+          fromMax: float, 
+          toMin: float, 
+          toMax: float): float =
     return toMin+((toMax-toMin)*((num-fromMin)/(fromMax-fromMin)))
 
 func idx* (x: int, y: int, z: int): int = 
@@ -66,21 +76,21 @@ func idx* (x: int, y: int, z: int): int =
 func idxH* (x: int, z: int): int =
     return idx(x, 0, z)
 
-func toChunkPos* (x: float32, y: float32, z: float32): tuple[x: int, y: int, z: int] =
-    result.x = (x / CHUNK_DIMENSION.x.float32).int
-    result.y = (y / CHUNK_DIMENSION.y.float32).int
-    result.z = (z / CHUNK_DIMENSION.z.float32).int
+func toChunkPos* (x: float, y: float, z: float): tuple[x: int, y: int, z: int] =
+    result.x = (x / CHUNK_DIMENSION.x.float).int
+    result.y = (y / CHUNK_DIMENSION.y.float).int
+    result.z = (z / CHUNK_DIMENSION.z.float).int
 
-# ==================================| Logic Handler |=======================================
+# ==================================| Chunk Handler |=======================================
 
 proc createWorld* (name: string): World =
     new(result)
     result.name = name
 
-proc registerUpdaterId* (world: var World, oid: var Oid, pX: float32, pY: float32, pZ: float32) = 
+proc registerUpdaterId* (world: var World, oid: var Oid, pX: float, pY: float, pZ: float) = 
     world.loaderIds[oid] = toChunkPos(pX, pY, pZ)
 
-proc createWorld* (name: string, oid: var Oid, pX: float32, pY: float32, pZ: float32): World =
+proc createWorld* (name: string, oid: var Oid, pX: float, pY: float, pZ: float): World =
     var world = createWorld(name)
     registerUpdaterId(world, oid, pX, pY, pZ)
     return world
@@ -90,13 +100,13 @@ proc genChunk (cX: int, cY: int, cZ: int): ref Chunk =
     result.pos = (cX,cY,cZ)
     for z in 0..<CHUNK_DIMENSION[2]:
         for x in 0..<CHUNK_DIMENSION[0]:
-            let height = ( simplex( vec2f( x.float32 + (cX*CHUNK_DIMENSION.x).float32, 
-                                           z.float32 + (cZ*CHUNK_DIMENSION.y).float32 ) / zoom.float32) + 1) * heightMult.float32
+            let height = ( simplex( vec2f( x.float + (cX*CHUNK_DIMENSION.x).float, 
+                                           z.float + (cZ*CHUNK_DIMENSION.y).float ) / zoom.float) + 1) * heightMult.float
             result.heightMap[idxH(x,z)] = height
             for y in 0..<height.int:
                 result.blockArr[idx(x,y,z)] = STONE
 
-proc getBlock* (world: var World, x: float32, y: float32, z: float32): BlockID =
+proc getBlock* (world: var World, x: float, y: float, z: float): BlockID =
     var cPos = toChunkPos(x,y,z)
     if world.chunks.hasKey(cPos):
         var bX = (x.int mod CHUNK_DIMENSION.x).int
@@ -105,7 +115,7 @@ proc getBlock* (world: var World, x: float32, y: float32, z: float32): BlockID =
         return world.chunks[cPos].blockArr[idx(bX, bY, bZ)]
     return VOID
 
-proc updateChunkQueue (world: var World, updater: var Oid, pX: float32, pY: float32, pZ: float32): bool =
+proc updateChunkQueue (world: var World, updater: var Oid, pX: float, pY: float, pZ: float): bool =
     var cPos = toChunkPos(pX,pY,pZ)
     if world.loaderIds.hasKey(updater):
         var coord = world.loaderIds.getOrDefault(updater)
@@ -139,8 +149,222 @@ proc processChunkQueue (world: var World): bool =
     # world.loadingChunk.excl(cCoord)
 
 #TO-DO: process entities here
-proc updateWorld* (world: var World, oid: var Oid, pX: float32, pY: float32, pZ: float32) =
+proc updateWorld* (world: var World, oid: var Oid, pX: float, pY: float, pZ: float) =
     var update = world.updateChunkQueue(oid, pX, pY, pZ)
     update = world.processChunkQueue()
 
-# ================================| Model Handler |==========================================
+# ==================================| Chunk Mesh Handler |=======================================
+
+#[ 
+    Taken from https://github.com/pietmichal/raycraft
+    with modifications. 
+ ]#
+
+const textCoordRef = [
+    # face 1
+    0.5,  1.0,
+    0.25, 1.0,
+    0.25, 0.0,
+
+    0.25, 0.0,
+    0.5,  0.0,
+    0.5,  1.0,
+
+    # face 2
+    0.25, 1.0,
+    0.25, 0.0,
+    0.5,  0.0,
+
+    0.5,  0.0,
+    0.5,  1.0,
+    0.25, 1.0,
+
+    # face 3 (top)
+    0.0,  0.0,
+    0.25, 0.0,
+    0.25, 1.0,
+
+    0.25, 1.0,
+    0.0,  1.0,
+    0.0,  0.0,
+
+    # face 4 (bottom)
+    0.0,  0.0,
+    0.25, 0.0,
+    0.25, 1.0,
+
+    0.25, 1.0,
+    0.0,  1.0,
+    0.0,  0.0,
+
+    # face 5
+    0.25, 1.0,
+    0.25, 0.0,
+    0.5,  0.0,
+
+    0.5,  0.0,
+    0.5,  1.0,
+    0.25, 1.0,
+
+    # face 6
+    0.5,  1.0,
+    0.25, 1.0,
+    0.25, 0.0,
+
+    0.25, 0.0,
+    0.5,  0.0,
+    0.5,  1.0,
+]
+
+const normalRef = [
+    # face 1
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0,
+
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0,
+
+    # face 2
+    0.0, 0.0, -1.0,
+    0.0, 0.0, -1.0,
+    0.0, 0.0, -1.0,
+
+    0.0, 0.0, -1.0,
+    0.0, 0.0, -1.0,
+    0.0, 0.0, -1.0,
+
+    # face 3
+    0.0, 1.0, 0.0,
+    0.0, 1.0, 0.0,
+    0.0, 1.0, 0.0,
+
+    0.0, 1.0, 0.0,
+    0.0, 1.0, 0.0,
+    0.0, 1.0, 0.0,
+
+    # face 4
+    0.0, -1.0, 0.0,
+    0.0, -1.0, 0.0,
+    0.0, -1.0, 0.0,
+
+    0.0, -1.0, 0.0,
+    0.0, -1.0, 0.0,
+    0.0, -1.0, 0.0,
+
+    # face 5
+    1.0, 0.0, 0.0,
+    1.0, 0.0, 0.0,
+    1.0, 0.0, 0.0,
+
+    1.0, 0.0, 0.0,
+    1.0, 0.0, 0.0,
+    1.0, 0.0, 0.0,
+
+    # face 6
+    -1.0, 0.0, 0.0,
+    -1.0, 0.0, 0.0,
+    -1.0, 0.0, 0.0,
+
+    -1.0, 0.0, 0.0,
+    -1.0, 0.0, 0.0,
+    -1.0, 0.0, 0.0
+]
+
+# Ugly af.
+proc getBlockFaces ( world: var World, x: float, y: float, z: float ): 
+    tuple[num: int, verts: array[108, float], nomrals: array[108, float], #[TO-DO]# textCoords: array[72, float]] =
+    
+    var width = 1.0
+    var height = 1.0
+    var length = 1.0 
+    var faces = [ $(world.getBlock(x, y, z+1)) == "t",
+                  $(world.getBlock(x, y, z-1)) == "t",
+                  $(world.getBlock(x, y+1, z)) == "t",
+                  $(world.getBlock(x, y-1, z)) == "t",
+                  $(world.getBlock(x+1, y, z)) == "t",
+                  $(world.getBlock(x-2, y, z)) == "t", ]
+    if faces[0]:
+        result.verts.mask([        x,        y, z+width,
+                            x+length,        y, z+width,
+                            x+length, y+height, z+width,
+                            
+                            x+length, y+height, z+width, 
+                                  x,  y+height, z+width,
+                                  x,         y, z+width ], result.num*18 )
+        for i in 0..18:
+            result.nomrals[i+result.num*18] = normalRef[i+0*18]
+        result.num += 1
+    if faces[1]:
+        result.verts.mask([        x,        y,        z,
+                                   x, y+height,        z,
+                            x+length, y+height,        z,
+                            
+                            x+length, y+height,        z, 
+                            x+length,        y,        z,
+                                  x,         y,        z ], result.num*18 )
+        for i in 0..18:
+            result.nomrals[i+result.num*18] = normalRef[i+1*18]
+        result.num += 1
+    if faces[2]:
+        result.verts.mask([        x, y+height,        z,
+                                   x, y+height, z+width,
+                            x+length, y+height, z+width,
+                            
+                            x+length, y+height, z+width,
+                            x+length, y+height,       z,
+                                   x, y+height,       z ], result.num*18 )
+        for i in 0..18:
+            result.nomrals[i+result.num*18] = normalRef[i+2*18]
+        result.num += 1
+    if faces[3]:
+        result.verts.mask([        x,        y,       z,
+                            x+length,        y,       z,
+                            x+length,        y, z+width,
+                            
+                            x+length,        y, z+width,
+                                   x,        y, z+width,
+                                   x,        y,       z ], result.num*18 )
+        for i in 0..18:
+            result.nomrals[i+result.num*18] = normalRef[i+3*18]
+        result.num += 1
+    if faces[4]:
+        result.verts.mask([ x+length,        y,       z,
+                            x+length, y+height,       z,
+                            x+length, y+height, z+width,
+                            
+                            x+length, y+height, z+width,
+                            x+length,        y, z+width,
+                            x+length,        y,       z ], result.num*18 )
+        for i in 0..18:
+            result.nomrals[i+result.num*18] = normalRef[i+4*18]
+        result.num += 1
+    if faces[5]:
+        result.verts.mask([        x,        y,       z,
+                                   x,        y, z+width,
+                                   x, y+height, z+width,
+                            
+                                   x, y+height, z+width,
+                                   x, y+height,       z,
+                                   x,        y,       z ], result.num*18 )
+        for i in 0..18:
+            result.nomrals[i+result.num*18] = normalRef[i+5*18]
+        result.num += 1
+
+proc getChunkModel* (world: var World, chunk: var Chunk): Model =
+    var vertArrayTemp: array[108*CHUNK_SIZE, float]
+    var normalArrayTemp: array[108*CHUNK_SIZE, float]
+    var faceI = 0
+    for x in 0..<CHUNK_DIMENSION.x:
+        for y in 0..<CHUNK_DIMENSION.y:
+            for z in 0..<CHUNK_DIMENSION.z:
+                var blockFaces = world.getBlockFaces(x.float,y.float,z.float)
+                let faceId = faceI*18
+                for id in 0..blockFaces.num*18:
+                    vertArrayTemp[id+faceId] = blockFaces.verts[id]
+                    normalArrayTemp[id+faceId] = blockFaces.nomrals[id]
+                faceI += blockFaces.num
+                dealloc(blockFaces.addr)
+                
+    discard
