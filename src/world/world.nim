@@ -2,6 +2,7 @@
 import 
     glm/noise,
     nimraylib_now/raylib,
+    nimraylib_now/rlgl,
     heapqueue,
     sets,
     heapqueue,
@@ -32,7 +33,7 @@ type
         name*: string
         chunkQueue* : HeapQueue[tuple[x: int, y: int, z: int]]
         loadingChunk*: HashSet[tuple[x: int, y: int, z: int]]
-        chunks*: Table[tuple[x: int, y: int, z: int], ref Chunk]
+        chunks*: Table[tuple[x: int, y: int, z: int], Chunk]
         generating*: bool
         loaderIds*: Table[Oid, tuple[x: int, y: int, z: int]] #TO-DO: pass ref coord
 
@@ -50,7 +51,8 @@ proc concat[I1, I2: static[int]; T](a: var array[I1, T], b: array[I2, T]): array
 
 proc mask[I1, I2: static[int]; T](a: var array[I1, T], b: array[I2, T], i: int) =
     for idx in i..a.high:
-        a[i] = b[idx-i]
+        if idx-i < b.len:
+            a[i] = b[idx-i]
 
 # TO-DO: SIMD & per-world dependant
 proc `<`(a, b: var tuple[x: int, y: int, z: int]): bool =
@@ -90,20 +92,20 @@ proc createWorld* (name: string): World =
 proc registerUpdaterId* (world: var World, oid: var Oid, pX: float, pY: float, pZ: float) = 
     world.loaderIds[oid] = toChunkPos(pX, pY, pZ)
 
-proc createWorld* (name: string, oid: var Oid, pX: float, pY: float, pZ: float): World =
+proc createWorld* (name: string, oid: var Oid, ppos: var tuple[x: float, y: float, z: float]): World =
     var world = createWorld(name)
-    registerUpdaterId(world, oid, pX, pY, pZ)
+    registerUpdaterId(world, oid, ppos.x, ppos.y, ppos.z)
     return world
 
-proc genChunk (cX: int, cY: int, cZ: int): ref Chunk =
-    new(result)
+proc genChunk* (cX: int, cY: int, cZ: int): Chunk =
+    new result
     result.pos = (cX,cY,cZ)
     for z in 0..<CHUNK_DIMENSION[2]:
         for x in 0..<CHUNK_DIMENSION[0]:
             let height = ( simplex( vec2f( x.float + (cX*CHUNK_DIMENSION.x).float, 
                                            z.float + (cZ*CHUNK_DIMENSION.y).float ) / zoom.float) + 1) * heightMult.float
             result.heightMap[idxH(x,z)] = height
-            for y in 0..<height.int:
+            for y in 0..<min(height.int, CHUNK_DIMENSION.y):
                 result.blockArr[idx(x,y,z)] = STONE
 
 proc getBlock* (world: var World, x: float, y: float, z: float): BlockID =
@@ -115,7 +117,7 @@ proc getBlock* (world: var World, x: float, y: float, z: float): BlockID =
         return world.chunks[cPos].blockArr[idx(bX, bY, bZ)]
     return VOID
 
-proc updateChunkQueue (world: var World, updater: var Oid, pX: float, pY: float, pZ: float): bool =
+proc updateChunkQueue* (world: var World, updater: var Oid, pX: float, pY: float, pZ: float): bool =
     var cPos = toChunkPos(pX,pY,pZ)
     if world.loaderIds.hasKey(updater):
         var coord = world.loaderIds.getOrDefault(updater)
@@ -139,7 +141,7 @@ proc updateChunkQueue (world: var World, updater: var Oid, pX: float, pY: float,
     world.generating = true
 
 # TO-DO: update chunk on multiple players
-proc processChunkQueue (world: var World): bool =
+proc processChunkQueue* (world: var World): bool =
     if world.chunkQueue.len == 0:
         return false
     var cCoord = world.chunkQueue.pop()
@@ -148,9 +150,9 @@ proc processChunkQueue (world: var World): bool =
     world.chunks[cCoord] = genChunk(cCoord.x, cCoord.y, cCoord.z)
     # world.loadingChunk.excl(cCoord)
 
-#TO-DO: process entities here
-proc updateWorld* (world: var World, oid: var Oid, pX: float, pY: float, pZ: float) =
-    var update = world.updateChunkQueue(oid, pX, pY, pZ)
+#TO-DO: process entities, use position pointer, use observer pattern
+proc updateWorld* (world: var World, oid: var Oid, ppos: var tuple[x: float, y: float, z: float]) =
+    var update = world.updateChunkQueue(oid, ppos.x, ppos.y, ppos.z)
     update = world.processChunkQueue()
 
 # ==================================| Chunk Mesh Handler |=======================================
@@ -353,9 +355,15 @@ proc getBlockFaces ( world: var World, x: float, y: float, z: float ):
         result.num += 1
 
 proc getChunkModel* (world: var World, chunk: var Chunk): Model =
-    var vertArrayTemp: array[108*CHUNK_SIZE, float]
-    var normalArrayTemp: array[108*CHUNK_SIZE, float]
+    echo "here0.1"
+    var vertArrayTemp: ref array[108*CHUNK_SIZE, float]
+    echo "here0.2"
+    var normalArrayTemp: ref array[108*CHUNK_SIZE, float]
+    echo "here0.3"
+    var textArrayTemp: ref array[108*CHUNK_SIZE, float]
+    echo "here0.4"
     var faceI = 0
+    echo "Here1"
     for x in 0..<CHUNK_DIMENSION.x:
         for y in 0..<CHUNK_DIMENSION.y:
             for z in 0..<CHUNK_DIMENSION.z:
@@ -366,5 +374,15 @@ proc getChunkModel* (world: var World, chunk: var Chunk): Model =
                     normalArrayTemp[id+faceId] = blockFaces.nomrals[id]
                 faceI += blockFaces.num
                 dealloc(blockFaces.addr)
-                
-    discard
+    echo "Here2"
+    var mesh: Mesh
+    mesh.vertices = cast[ptr cfloat](vertArrayTemp[0])
+    mesh.normals = cast[ptr cfloat](normalArrayTemp[0])
+    mesh.texcoords = cast[ptr cfloat](textArrayTemp[0])
+
+    mesh.vertexCount = (faceI*18/3).cint # 18 coords / 3 axis
+    mesh.triangleCount = (faceI*18/6).cint # ???
+
+    loadMesh(addr mesh, false)
+
+    result = loadModelFromMesh mesh
